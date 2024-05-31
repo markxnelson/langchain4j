@@ -51,6 +51,7 @@
         <awaitility.version>4.2.0</awaitility.version>
         <jsonpath.version>2.9.0</jsonpath.version>
         <infinispan.version>15.0.0.Final</infinispan.version>
+        <oci.sdk.version>3.42.0</oci.sdk.version>
     </properties>
 
     <dependencyManagement>
@@ -350,6 +351,36 @@
                         <artifactId>netty-handler</artifactId>
                     </exclusion>
                 </exclusions>
+            </dependency>
+
+            <dependency>
+                <groupId>com.oracle.oci.sdk</groupId>
+                <artifactId>oci-java-sdk-generativeaiinference</artifactId>
+                <version>${oci.sdk.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.oracle.oci.sdk</groupId>
+                <artifactId>oci-java-sdk-core</artifactId>
+                <version>${oci.sdk.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.oracle.oci.sdk</groupId>
+                <artifactId>oci-java-sdk-identity</artifactId>
+                <version>${oci.sdk.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.oracle.oci.sdk</groupId>
+                <artifactId>oci-java-sdk-addons-oke-workload-identity</artifactId>
+                <version>${oci.sdk.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.oracle.oci.sdk</groupId>
+                <artifactId>oci-java-sdk-common-httpclient-jersey3</artifactId>
+                <version>${oci.sdk.version}</version>
             </dependency>
 
             <dependency>
