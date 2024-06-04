@@ -367,6 +367,12 @@
 
             <dependency>
                 <groupId>dev.langchain4j</groupId>
+                <artifactId>langchain4j-document-loader-oci-object-storage</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>dev.langchain4j</groupId>
                 <artifactId>langchain4j-document-loader-selenium</artifactId>
                 <version>${project.version}</version>
             </dependency>
