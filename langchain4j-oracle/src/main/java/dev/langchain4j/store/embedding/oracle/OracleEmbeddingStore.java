@@ -9,18 +9,33 @@ import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
 import dev.langchain4j.store.embedding.EmbeddingSearchResult;
 import dev.langchain4j.store.embedding.EmbeddingStore;
 import dev.langchain4j.store.embedding.filter.Filter;
+import oracle.jdbc.OracleType;
+import oracle.sql.VECTOR;
+import oracle.sql.json.OracleJsonFactory;
+import oracle.sql.json.OracleJsonObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.stream.Collectors;
 
 import static dev.langchain4j.internal.Utils.getOrDefault;
+import static dev.langchain4j.internal.Utils.isNullOrEmpty;
 import static dev.langchain4j.internal.ValidationUtils.ensureNotBlank;
+import static dev.langchain4j.internal.ValidationUtils.ensureNotEmpty;
 import static dev.langchain4j.internal.ValidationUtils.ensureNotNull;
+import static dev.langchain4j.internal.ValidationUtils.ensureTrue;
+import static java.util.Collections.singletonList;
 
 public class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
+    private static final Logger log = LoggerFactory.getLogger(OracleEmbeddingStore.class);
     private static final Integer DEFAULT_DIMENSIONS = -1;
     private static final Integer DEFAULT_ACCURACY = -1;
     private static final DistanceType DEFAULT_DISTANCE_TYPE = DistanceType.COSINE;
@@ -67,7 +82,9 @@ public class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
      */
     @Override
     public String add(Embedding embedding) {
-        return null;
+        String id = UUID.randomUUID().toString();
+        addInternal(id, embedding, null);
+        return id;
     }
 
     /**
@@ -80,7 +97,7 @@ public class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
      */
     @Override
     public void add(String id, Embedding embedding) {
-
+        addInternal(id, embedding, null);
     }
 
     /**
@@ -95,7 +112,9 @@ public class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
      */
     @Override
     public String add(Embedding embedding, TextSegment textSegment) {
-        return null;
+        String id = UUID.randomUUID().toString();
+        addInternal(id, embedding, null);
+        return id;
     }
 
     /**
@@ -107,7 +126,9 @@ public class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
      */
     @Override
     public List<String> addAll(List<Embedding> embeddings) {
-        return null;
+        List<String> ids = createIds(embeddings);
+        addAllInternal(ids, embeddings, null);
+        return ids;
     }
 
     /**
@@ -123,7 +144,9 @@ public class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
     @Override
     public List<String> addAll(List<Embedding> embeddings,
         List<TextSegment> embedded) {
-        return null;
+        List<String> ids = createIds(embeddings);
+        addAllInternal(ids, embeddings, embedded);
+        return ids;
     }
 
     /**
@@ -182,6 +205,83 @@ public class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
         return null;
     }
 
+    private void addInternal(String id, Embedding embedding, TextSegment embedded) {
+        addAllInternal(
+                singletonList(id),
+                singletonList(embedding),
+                embedded == null ? null : singletonList(embedded));
+    }
+
+    private void addAllInternal(List<String> ids, List<Embedding> embeddings, List<TextSegment> segments) {
+        if (isNullOrEmpty(ids) || isNullOrEmpty(embeddings)) {
+            log.info("Empty embeddings - none added");
+            return;
+        }
+        ensureTrue(ids.size() == embeddings.size(), "ids and embeddings have different size");
+        ensureTrue(segments == null || segments.size() == embeddings.size(), "segments and embeddings have different size");
+
+        String upsert = String.format("merge into %s target using (values(?, ?, ?, ?)) source (id, content, metadata, embedding) on (target.id = source.id)\n" +
+                "when matched then update set target.content = source.content, target.metadata = source.metadata, target.embedding = source.embedding\n" +
+                "when not matched then insert (target.id, target.content, target.metadata, target.embedding) values (source.id, source.content, source.metadata, source.embedding)",
+                table);
+        try (Connection connection = dataSource.getConnection(); PreparedStatement stmt = connection.prepareStatement(upsert)) {
+            for (int i = 0; i < ids.size(); i++) {
+                stmt.setString(1, ids.get(i));
+                if (segments != null && segments.get(i) != null) {
+                    TextSegment textSegment = segments.get(i);
+                    stmt.setString(2, textSegment.text());
+                    OracleJsonObject ojson = toJSON(textSegment.metadata().toMap());
+                    stmt.setObject(3, ojson, OracleType.JSON.getVendorTypeNumber());
+                } else {
+                    stmt.setString(2, "");
+                    stmt.setObject(3, toJSON(null), OracleType.JSON.getVendorTypeNumber());
+                }
+                stmt.setObject(4, toVECTOR(embeddings.get(i)), OracleType.VECTOR.getVendorTypeNumber());
+                stmt.addBatch();
+            }
+            stmt.executeBatch();
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private List<String> createIds(List<Embedding> embeddings) {
+        return embeddings.stream()
+                .map(e -> UUID.randomUUID().toString())
+                .collect(Collectors.toList());
+    }
+
+    private VECTOR toVECTOR(Embedding embedding) throws SQLException {
+        return VECTOR.ofFloat32Values(embedding.vector());
+    }
+
+    private OracleJsonObject toJSON(Map<String, Object> metadata) {
+        OracleJsonObject ojson = new OracleJsonFactory().createObject();
+        if (metadata == null) {
+            return ojson;
+        }
+        for (Map.Entry<String, Object> entry : metadata.entrySet()) {
+            final Object o = entry.getValue();
+            if (o instanceof String) {
+                ojson.put(entry.getKey(), (String) o);
+            }
+            else if (o instanceof Integer) {
+                ojson.put(entry.getKey(), (Integer) o);
+            }
+            else if (o instanceof Float) {
+                ojson.put(entry.getKey(), (Float) o);
+            }
+            else if (o instanceof Double) {
+                ojson.put(entry.getKey(), (Double) o);
+            }
+            else if (o instanceof Boolean) {
+                ojson.put(entry.getKey(), (Boolean) o);
+            }
+            ojson.put(entry.getKey(), String.valueOf(entry.getValue()));
+        }
+        return ojson;
+    }
+
     protected void initTable(Boolean dropTableFirst, Boolean createTable, Boolean useIndex, Integer dimension) {
         String query = "init";
         try (Connection connection = dataSource.getConnection(); Statement stmt = connection.createStatement()) {
@@ -191,8 +291,8 @@ public class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
             if (createTable) {
                 stmt.executeUpdate(String.format("create table if not exists %s (\n" +
                                 "id        varchar2(36) default sys_guid() primary key,\n" +
-                                "content   clob not null,\n" +
-                                "metadata  json not null,\n" +
+                                "content   clob,\n" +
+                                "metadata  json,\n" +
                                 "embedding vector(%s,FLOAT64) annotations(Distance '%s', IndexType '%s'))",
                         table, getDimensionString(dimension), distanceType.name(), indexType.name()));
             }
