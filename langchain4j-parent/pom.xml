@@ -42,6 +42,7 @@
         <aws-java-sdk-core.version>1.12.564</aws-java-sdk-core.version>
         <aws-opensearch.version>2.20.161</aws-opensearch.version>
         <opensearch-containers.version>2.0.1</opensearch-containers.version>
+        <oracle.version>23.4.0.24.05</oracle.version>
         <elastic.version>8.9.0</elastic.version>
         <jackson.version>2.16.1</jackson.version>
         <jedis.version>5.0.0</jedis.version>
@@ -387,6 +388,12 @@
                 <groupId>com.oracle.oci.sdk</groupId>
                 <artifactId>oci-java-sdk-common-httpclient-jersey3</artifactId>
                 <version>${oci.sdk.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.oracle.database.jdbc</groupId>
+                <artifactId>ojdbc11</artifactId>
+                <version>${oracle.version}</version>
             </dependency>
 
             <dependency>

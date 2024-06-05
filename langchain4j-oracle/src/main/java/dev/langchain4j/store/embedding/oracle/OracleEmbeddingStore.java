@@ -1,5 +1,7 @@
 package dev.langchain4j.store.embedding.oracle;
 
+import javax.sql.DataSource;
+
 import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
@@ -8,10 +10,53 @@ import dev.langchain4j.store.embedding.EmbeddingSearchResult;
 import dev.langchain4j.store.embedding.EmbeddingStore;
 import dev.langchain4j.store.embedding.filter.Filter;
 
+import java.sql.Connection;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.Collection;
 import java.util.List;
 
+import static dev.langchain4j.internal.Utils.getOrDefault;
+import static dev.langchain4j.internal.ValidationUtils.ensureNotBlank;
+import static dev.langchain4j.internal.ValidationUtils.ensureNotNull;
+
 public class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
+    private static final Integer DEFAULT_DIMENSIONS = -1;
+    private static final Integer DEFAULT_ACCURACY = -1;
+    private static final DistanceType DEFAULT_DISTANCE_TYPE = DistanceType.COSINE;
+    private static final IndexType DEFAULT_INDEX_TYPE = IndexType.IVF;
+
+    private final String table;
+    private final DataSource dataSource;
+    private final Integer accuracy;
+    private final DistanceType distanceType;
+    private final IndexType indexType;
+
+
+    public OracleEmbeddingStore(DataSource dataSource,
+                                String table,
+                                Integer dimension,
+                                Integer accuracy,
+                                DistanceType distanceType,
+                                IndexType indexType,
+                                Boolean useIndex,
+                                Boolean createTable,
+                                Boolean dropTableFirst
+    ) {
+        this.dataSource = ensureNotNull(dataSource, "dataSource");
+        this.table = ensureNotBlank(table, "table");
+        this.accuracy = getOrDefault(accuracy, DEFAULT_ACCURACY);
+        this.distanceType = getOrDefault(distanceType, DEFAULT_DISTANCE_TYPE);
+        this.indexType = getOrDefault(indexType, DEFAULT_INDEX_TYPE);
+
+        useIndex = getOrDefault(useIndex, false);
+        createTable = getOrDefault(createTable, true);
+        dropTableFirst = getOrDefault(dropTableFirst, false);
+        dimension = getOrDefault(dimension, DEFAULT_DIMENSIONS);
+
+        initTable(dropTableFirst, createTable, useIndex, dimension);
+    }
+
 
     /**
      * Adds a given embedding to the store.
@@ -110,7 +155,7 @@ public class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
      */
     @Override
     public void removeAll(Filter filter) {
-        
+
     }
 
     /**
@@ -137,5 +182,136 @@ public class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
         return null;
     }
 
+    protected void initTable(Boolean dropTableFirst, Boolean createTable, Boolean useIndex, Integer dimension) {
+        String query = "init";
+        try (Connection connection = dataSource.getConnection(); Statement stmt = connection.createStatement()) {
+            if (dropTableFirst) {
+                stmt.executeUpdate(String.format("drop table if exists %s purge", query));
+            }
+            if (createTable) {
+                stmt.executeUpdate(String.format("create table if not exists %s (\n" +
+                                "id        varchar2(36) default sys_guid() primary key,\n" +
+                                "content   clob not null,\n" +
+                                "metadata  json not null,\n" +
+                                "embedding vector(%s,FLOAT64) annotations(Distance '%s', IndexType '%s'))",
+                        table, getDimensionString(dimension), distanceType.name(), indexType.name()));
+            }
+            if (useIndex) {
+                switch (indexType) {
+                    case IVF:
+                        stmt.executeUpdate(String.format("create vector index if not exists vector_index_%s on %s (embedding)\n" +
+                                "organization neighbor partitions\n" +
+                                "distance %s\n" +
+                                "with target accuracy %d\n" +
+                                "parameters (type IVF, neighbor partitions 10)",
+                                table, table, distanceType.name(), getAccuracy()));
+                        break;
+
+                    /*
+                     * TODO: Enable for 23.5 case HNSW:
+                     * this.jdbcTemplate.execute(String.format(""" create vector index if not
+                     * exists vector_index_%s on %s (embedding) organization inmemory neighbor
+                     * graph distance %s with target accuracy %d parameters (type HNSW,
+                     * neighbors 40, efconstruction 500)""", tableName, tableName,
+                     * distanceType.name(), searchAccuracy == DEFAULT_SEARCH_ACCURACY ? 95 :
+                     * searchAccuracy)); break;
+                     */
+                }
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException(String.format("Could not connect to database: %s", query), e);
+        }
+    }
+
+    private String getDimensionString(Integer dimension) {
+        return dimension.equals(DEFAULT_DIMENSIONS) ? "*" : String.valueOf(dimension);
+    }
+
+    private int getAccuracy() {
+        return accuracy.equals(DEFAULT_ACCURACY) ? 95 : accuracy;
+    }
+
+    public enum DistanceType {
+        /**
+         * Default metric. It calculates the cosine distane between two vectors.
+         */
+        COSINE,
+
+        /**
+         * Also called the inner product, calculates the negated dot product of two
+         * vectors.
+         */
+        DOT,
+
+        /**
+         * Also called L2_DISTANCE, calculates the Euclidean distance between two vectors.
+         */
+        EUCLIDEAN,
+
+        /**
+         * Also called L2_SQUARED is the Euclidean distance without taking the square
+         * root.
+         */
+        EUCLIDEAN_SQUARED,
+
+        /*
+         * Calculates the hamming distance between two vectors. Requires INT8 element
+         * type.
+         */
+        // TODO: add HAMMING support,
+
+        /**
+         * Also called L1_DISTANCE or taxicab distance, calculates the Manhattan distance.
+         */
+        MANHATTAN
+    }
+
+    public enum IndexType {
+
+        /**
+         * Performs exact nearest neighbor search.
+         */
+        NONE,
+
+        /**
+         * </p>
+         * The default type of index created for an In-Memory Neighbor Graph vector index
+         * is Hierarchical Navigable Small World (HNSW).
+         * </p>
+         *
+         * <p>
+         * With Navigable Small World (NSW), the idea is to build a proximity graph where
+         * each vector in the graph connects to several others based on three
+         * characteristics:
+         * <ul>
+         * <li>The distance between vectors</li>
+         * <li>The maximum number of closest vector candidates considered at each step of
+         * the search during insertion (EFCONSTRUCTION)</li>
+         * <li>Within the maximum number of connections (NEIGHBORS) permitted per
+         * vector</li>
+         * </ul>
+         * </p>
+         *
+         * @see <a href=
+         * "https://docs.oracle.com/en/database/oracle/oracle-database/23/vecse/understand-hierarchical-navigable-small-world-indexes.html">Oracle
+         * Database documentation</a>
+         */
+        HNSW,
+
+        /**
+         * <p>
+         * The default type of index created for a Neighbor Partition vector index is
+         * Inverted File Flat (IVF) vector index. The IVF index is a technique designed to
+         * enhance search efficiency by narrowing the search area through the use of
+         * neighbor partitions or clusters.
+         * </p>
+         *
+         * * @see <a href=
+         * "https://docs.oracle.com/en/database/oracle/oracle-database/23/vecse/understand-inverted-file-flat-vector-indexes.html">Oracle
+         * Database documentation</a>
+         */
+        IVF;
+
+    }
 
 }
