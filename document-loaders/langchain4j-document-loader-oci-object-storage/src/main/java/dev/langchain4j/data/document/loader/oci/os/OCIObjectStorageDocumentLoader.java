@@ -19,6 +19,7 @@ import org.slf4j.LoggerFactory;
 
 public class OCIObjectStorageDocumentLoader {
     private static final Logger log = LoggerFactory.getLogger(OCIObjectStorageDocumentLoader.class);
+    private static final Integer DEFAULT_LIMIT = -1;
 
     // Tenancy-unique Object Storage namespace
     private final String namespace;
@@ -26,19 +27,22 @@ public class OCIObjectStorageDocumentLoader {
     private final ObjectStorageClient objectStorageClient;
     // If set, the document loader will skip object loading errors when processing multiple documents from a bucket.
     private final boolean skipObjectLoadOnError;
+    private final Integer limit;
 
     public OCIObjectStorageDocumentLoader(String namespace, String region, ObjectStorageClient objectStorageClient) {
-        this.namespace = namespace;
-        this.region = region;
-        this.objectStorageClient = objectStorageClient;
-        this.skipObjectLoadOnError = true;
+        this(namespace, region, objectStorageClient, true, DEFAULT_LIMIT);
     }
 
     public OCIObjectStorageDocumentLoader(String namespace, String region, ObjectStorageClient objectStorageClient, boolean skipObjectLoadOnError) {
+        this(namespace, region, objectStorageClient, skipObjectLoadOnError, DEFAULT_LIMIT);
+    }
+
+    public OCIObjectStorageDocumentLoader(String namespace, String region, ObjectStorageClient objectStorageClient, boolean skipObjectLoadOnError, Integer limit) {
         this.namespace = namespace;
         this.region = region;
         this.objectStorageClient = objectStorageClient;
         this.skipObjectLoadOnError = skipObjectLoadOnError;
+        this.limit = limit;
     }
 
     /**
@@ -75,21 +79,25 @@ public class OCIObjectStorageDocumentLoader {
      * @return A list of documents from the bucket matching the prefix.
      */
     public List<Document> loadDocuments(String bucket, String prefix, DocumentParser parser) {
-        ListObjectsRequest request = ListObjectsRequest.builder()
+        ListObjectsRequest.Builder requestBuilder = ListObjectsRequest.builder()
                 .namespaceName(namespace)
                 .bucketName(bucket)
-                .prefix(prefix)
-                .build();
-        ListObjectsResponse response = objectStorageClient.listObjects(request);
+                .prefix(prefix);
+        if (!limit.equals(DEFAULT_LIMIT)) {
+            requestBuilder.limit(limit);
+        }
+        ListObjectsResponse response = objectStorageClient.listObjects(requestBuilder.build());
         List<Document> documents = new ArrayList<>(toDocuments(bucket, parser, response));
         while (response.getListObjects().getNextStartWith() != null) {
-            ListObjectsRequest paginatedRequest = ListObjectsRequest.builder()
+            requestBuilder = ListObjectsRequest.builder()
                     .namespaceName(namespace)
                     .bucketName(bucket)
                     .prefix(prefix)
-                    .start(response.getListObjects().getNextStartWith())
-                    .build();
-            response = objectStorageClient.listObjects(request);
+                    .start(response.getListObjects().getNextStartWith());
+            if (!limit.equals(DEFAULT_LIMIT)) {
+                requestBuilder.limit(limit);
+            }
+            response = objectStorageClient.listObjects(requestBuilder.build());
             documents.addAll(toDocuments(bucket, parser, response));
         }
         return documents;

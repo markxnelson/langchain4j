@@ -63,7 +63,7 @@ public class OCIObjectStorageDocumentLoaderIT {
     @BeforeAll
     static void setup() throws IOException {
         ObjectStorageClientProvider.ClientConfiguration client = ObjectStorageClientProvider.get();
-        documentLoader = new OCIObjectStorageDocumentLoader(NAMESPACE_NAME, client.region, client.objectStorageClient);
+        documentLoader = new OCIObjectStorageDocumentLoader(NAMESPACE_NAME, client.region, client.objectStorageClient, true, 1);
         objectStorageClient = client.objectStorageClient;
 
         deleteBucket(); // try to clean up the bucket if it already exists
