@@ -9,7 +9,6 @@ import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
 import dev.langchain4j.store.embedding.EmbeddingSearchResult;
 import dev.langchain4j.store.embedding.EmbeddingStore;
 import dev.langchain4j.store.embedding.filter.Filter;
-import oracle.jdbc.OracleConnection;
 import oracle.jdbc.OracleType;
 import oracle.sql.VECTOR;
 import oracle.sql.json.OracleJsonFactory;
@@ -17,7 +16,6 @@ import oracle.sql.json.OracleJsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.sql.Array;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
@@ -28,12 +26,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 
 import static dev.langchain4j.internal.Utils.getOrDefault;
 import static dev.langchain4j.internal.Utils.isNullOrEmpty;
 import static dev.langchain4j.internal.ValidationUtils.ensureNotBlank;
-import static dev.langchain4j.internal.ValidationUtils.ensureNotEmpty;
 import static dev.langchain4j.internal.ValidationUtils.ensureNotNull;
 import static dev.langchain4j.internal.ValidationUtils.ensureTrue;
 import static java.util.Collections.singletonList;
@@ -51,7 +47,7 @@ public class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
     private final DistanceType distanceType;
     private final IndexType indexType;
 
-    private final OracleFilterMapper filterMapper = new OracleFilterMapper();
+    private final OracleJSONPathFilterMapper filterMapper = new OracleJSONPathFilterMapper();
 
 
     public OracleEmbeddingStore(DataSource dataSource,
@@ -119,7 +115,7 @@ public class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
     @Override
     public String add(Embedding embedding, TextSegment textSegment) {
         String id = UUID.randomUUID().toString();
-        addInternal(id, embedding, null);
+        addInternal(id, embedding, textSegment);
         return id;
     }
 
@@ -202,8 +198,10 @@ public class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
      */
     @Override
     public void removeAll(Filter filter) {
-        String whereClause = filterMapper.whereClause(filter);
-        String deleteQuery = String.format("delete from %s where %s", table, whereClause);
+        String deleteQuery = String.format("delete from %s", table);
+        if (filter != null) {
+            deleteQuery = String.format("%s %s", deleteQuery, filterMapper.whereClause(filter));
+        }
         try (Connection connection = dataSource.getConnection(); Statement stmt = connection.createStatement()) {
             stmt.executeUpdate(deleteQuery);
         } catch (SQLException e) {
@@ -236,6 +234,15 @@ public class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
      */
     @Override
     public EmbeddingSearchResult<TextSegment> search(EmbeddingSearchRequest request) {
+        Embedding embedding = request.queryEmbedding();
+        Filter filter = request.filter();
+
+
+        try (Connection connection = dataSource.getConnection()) {
+
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
         return null;
     }
 

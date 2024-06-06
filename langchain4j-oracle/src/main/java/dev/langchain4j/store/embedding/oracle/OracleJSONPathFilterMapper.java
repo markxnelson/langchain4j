@@ -16,42 +16,43 @@ import dev.langchain4j.store.embedding.filter.logical.And;
 import dev.langchain4j.store.embedding.filter.logical.Not;
 import dev.langchain4j.store.embedding.filter.logical.Or;
 
-public class OracleFilterMapper {
+public class OracleJSONPathFilterMapper {
     public String whereClause(Filter filter) {
-        return map(filter);
+        final String jsonExistsClause = "where json_exists(metadata, '$?(%s)')";
+        return String.format(jsonExistsClause, map(filter));
     }
 
     private String map(Filter filter) {
         if (filter instanceof IsEqualTo) {
             IsEqualTo eq = (IsEqualTo) filter;
-            return String.format("%s == %s", eq.key(), formatValue(eq.comparisonValue()));
+            return String.format("%s == %s", formatKey(eq.key()), formatValue(eq.comparisonValue()));
         } else if (filter instanceof IsNotEqualTo) {
             IsNotEqualTo ne = (IsNotEqualTo) filter;
-            return String.format("%s != %s", ne.key(), formatValue(ne.comparisonValue()));
+            return String.format("%s != %s", formatKey(ne.key()), formatValue(ne.comparisonValue()));
         } else if (filter instanceof IsGreaterThan) {
             IsGreaterThan gt = (IsGreaterThan) filter;
-            return String.format("%s > %s", gt.key(), formatValue(gt.comparisonValue()));
+            return String.format("%s > %s", formatKey(gt.key()), formatValue(gt.comparisonValue()));
         } else if (filter instanceof IsGreaterThanOrEqualTo) {
             IsGreaterThanOrEqualTo gte = (IsGreaterThanOrEqualTo) filter;
-            return String.format("%s >= %s", gte.key(), formatValue(gte.comparisonValue()));
+            return String.format("%s >= %s", formatKey(gte.key()), formatValue(gte.comparisonValue()));
         } else if (filter instanceof IsLessThan) {
             IsLessThan lt = (IsLessThan) filter;
-            return String.format("%s < %s", lt.key(), formatValue(lt.comparisonValue()));
+            return String.format("%s < %s", formatKey(lt.key()), formatValue(lt.comparisonValue()));
         } else if (filter instanceof IsLessThanOrEqualTo) {
             IsLessThanOrEqualTo lte = (IsLessThanOrEqualTo) filter;
-            return String.format("%s <= %s", lte.key(), formatValue(lte.comparisonValue()));
+            return String.format("%s <= %s", formatKey(lte.key()), formatValue(lte.comparisonValue()));
         } else if (filter instanceof IsIn) {
             IsIn in = (IsIn) filter;
-            return String.format("%s in %s", in.key(), formatValues(in.comparisonValues()));
+            return String.format("%s in %s", formatKey(in.key()), formatValues(in.comparisonValues()));
         } else if (filter instanceof IsNotIn) {
             IsNotIn ni = (IsNotIn) filter;
-            return String.format("%s not in %s", ni.key(), formatValues(ni.comparisonValues()));
+            return String.format("%s not in %s", formatKey(ni.key()), formatValues(ni.comparisonValues()));
         } else if (filter instanceof And) {
             And and = (And) filter;
             return String.format("%s && %s", map(and.left()), map(and.right()));
         } else if (filter instanceof Not) {
             Not not = (Not) filter;
-            return String.format("not (%s)", map(not.expression()));
+            return String.format("nin (%s)", map(not.expression()));
         } else if (filter instanceof Or) {
             Or or = (Or) filter;
             return String.format("(%s || %s)", map(or.left()), map(or.right()));
@@ -60,9 +61,13 @@ public class OracleFilterMapper {
         }
     }
 
+    private String formatKey(String key) {
+        return "@." + key;
+    }
+
     private String formatValue(Object v) {
         if (v instanceof String) {
-            return "'" + v + "'";
+            return String.format("\"%s\"", v);
         } else {
             return v.toString();
         }
