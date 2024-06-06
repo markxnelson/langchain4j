@@ -15,6 +15,8 @@ import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.AllMiniLmL6V2QuantizedEmbeddingModel;
 import dev.langchain4j.model.embedding.EmbeddingModel;
+import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
+import dev.langchain4j.store.embedding.EmbeddingSearchResult;
 import dev.langchain4j.store.embedding.filter.Filter;
 import dev.langchain4j.store.embedding.filter.MetadataFilterBuilder;
 import oracle.jdbc.pool.OracleDataSource;
@@ -109,6 +111,13 @@ public class OracleEmbeddingStoreIT {
     void addWithSegment() {
         String id3 = store.add(e3, ts3);
         assertThat(id3).isNotNull();
+    }
+
+    @Test
+    void search() {
+        store.add(e3, ts3);
+        EmbeddingSearchResult<TextSegment> matches = store.search(new EmbeddingSearchRequest(e3, 1, 1.0, null));
+        System.out.println(matches);
     }
 
     private List<Embedding> listOf(Embedding... embedding) {

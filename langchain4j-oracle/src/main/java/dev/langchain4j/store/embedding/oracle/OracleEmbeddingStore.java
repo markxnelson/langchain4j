@@ -5,19 +5,20 @@ import javax.sql.DataSource;
 import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
+import dev.langchain4j.store.embedding.EmbeddingMatch;
 import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
 import dev.langchain4j.store.embedding.EmbeddingSearchResult;
 import dev.langchain4j.store.embedding.EmbeddingStore;
 import dev.langchain4j.store.embedding.filter.Filter;
 import oracle.jdbc.OracleType;
-import oracle.sql.VECTOR;
-import oracle.sql.json.OracleJsonFactory;
 import oracle.sql.json.OracleJsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
@@ -28,6 +29,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 import static dev.langchain4j.internal.Utils.getOrDefault;
+import static dev.langchain4j.internal.Utils.isNotNullOrBlank;
 import static dev.langchain4j.internal.Utils.isNullOrEmpty;
 import static dev.langchain4j.internal.ValidationUtils.ensureNotBlank;
 import static dev.langchain4j.internal.ValidationUtils.ensureNotNull;
@@ -48,7 +50,7 @@ public class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
     private final IndexType indexType;
 
     private final OracleJSONPathFilterMapper filterMapper = new OracleJSONPathFilterMapper();
-
+    private final OracleDataAdapter dataAdapter = new OracleDataAdapter();
 
     public OracleEmbeddingStore(DataSource dataSource,
                                 String table,
@@ -234,16 +236,57 @@ public class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
      */
     @Override
     public EmbeddingSearchResult<TextSegment> search(EmbeddingSearchRequest request) {
-        Embedding embedding = request.queryEmbedding();
-        Filter filter = request.filter();
-
-
-        try (Connection connection = dataSource.getConnection()) {
-
+        Embedding requestEmbedding = request.queryEmbedding();
+        int maxResults = request.maxResults();
+        double minScore = request.minScore();
+        String filterClause = request.filter() != null ? filterMapper.whereClause(request.filter()) + "\n" : "";
+        List<EmbeddingMatch<TextSegment>> matches = new ArrayList<>();
+        String searchQuery = String.format("select * from\n" +
+                "(\n" +
+                "select id, content, metadata, embedding, %s\n" +
+                "from %s\n" +
+                "%s" +
+                "order by distance\n" +
+                ")\n" +
+                "where distance <= ?\n" +
+                "%s", vectorDistanceClause(), table, filterClause, accuracyClause(maxResults));
+        try (Connection connection = dataSource.getConnection(); PreparedStatement stmt = connection.prepareStatement(searchQuery)) {
+            stmt.setObject(1, dataAdapter.toVECTOR(requestEmbedding), OracleType.VECTOR.getVendorTypeNumber());
+            stmt.setObject(2, minScore, OracleType.NUMBER.getVendorTypeNumber());
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    String id = rs.getString("id");
+                    double[] embeddings = rs.getObject("embedding", double[].class);
+                    Embedding embedding = new Embedding(dataAdapter.toFloatArray(embeddings));
+                    String content = rs.getObject("content", String.class);
+                    double distance = rs.getObject("distance", BigDecimal.class).doubleValue();
+                    TextSegment textSegment = null;
+                    if (isNotNullOrBlank(content)) {
+                        Map<String, Object> metadata = dataAdapter.toMap(rs.getObject("metadata", OracleJsonObject.class));
+                        textSegment = TextSegment.from(content, new Metadata(metadata));
+                    }
+                    matches.add(new EmbeddingMatch<>(distance, id, embedding, textSegment));
+                }
+            }
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }
-        return null;
+        return new EmbeddingSearchResult<>(matches);
+    }
+
+    private String accuracyClause(int maxResults) {
+        if (accuracy.equals(DEFAULT_ACCURACY)) {
+            return String.format("fetch first %d rows only", maxResults);
+        }
+        return String.format("fetch approximate first %d rows only with target accuracy %d", maxResults, accuracy);
+    }
+
+    private String vectorDistanceClause() {
+        String clause = String.format("vector_distance(embedding, ?, %s) as distance", distanceType.name());
+        if (distanceType == DistanceType.DOT) {
+            clause = String.format("(1+%s)/2", clause);
+        }
+        return clause;
     }
 
     private void addInternal(String id, Embedding embedding, TextSegment embedded) {
@@ -271,13 +314,13 @@ public class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
                 if (segments != null && segments.get(i) != null) {
                     TextSegment textSegment = segments.get(i);
                     stmt.setString(2, textSegment.text());
-                    OracleJsonObject ojson = toJSON(textSegment.metadata().toMap());
+                    OracleJsonObject ojson = dataAdapter.toJSON(textSegment.metadata().toMap());
                     stmt.setObject(3, ojson, OracleType.JSON.getVendorTypeNumber());
                 } else {
                     stmt.setString(2, "");
-                    stmt.setObject(3, toJSON(null), OracleType.JSON.getVendorTypeNumber());
+                    stmt.setObject(3, dataAdapter.toJSON(null), OracleType.JSON.getVendorTypeNumber());
                 }
-                stmt.setObject(4, toVECTOR(embeddings.get(i)), OracleType.VECTOR.getVendorTypeNumber());
+                stmt.setObject(4, dataAdapter.toVECTOR(embeddings.get(i)), OracleType.VECTOR.getVendorTypeNumber());
                 stmt.addBatch();
             }
             stmt.executeBatch();
@@ -290,37 +333,6 @@ public class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
         return embeddings.stream()
                 .map(e -> UUID.randomUUID().toString())
                 .collect(Collectors.toList());
-    }
-
-    private VECTOR toVECTOR(Embedding embedding) throws SQLException {
-        return VECTOR.ofFloat32Values(embedding.vector());
-    }
-
-    private OracleJsonObject toJSON(Map<String, Object> metadata) {
-        OracleJsonObject ojson = new OracleJsonFactory().createObject();
-        if (metadata == null) {
-            return ojson;
-        }
-        for (Map.Entry<String, Object> entry : metadata.entrySet()) {
-            final Object o = entry.getValue();
-            if (o instanceof String) {
-                ojson.put(entry.getKey(), (String) o);
-            }
-            else if (o instanceof Integer) {
-                ojson.put(entry.getKey(), (Integer) o);
-            }
-            else if (o instanceof Float) {
-                ojson.put(entry.getKey(), (Float) o);
-            }
-            else if (o instanceof Double) {
-                ojson.put(entry.getKey(), (Double) o);
-            }
-            else if (o instanceof Boolean) {
-                ojson.put(entry.getKey(), (Boolean) o);
-            }
-            ojson.put(entry.getKey(), String.valueOf(entry.getValue()));
-        }
-        return ojson;
     }
 
     protected void initTable(Boolean dropTableFirst, Boolean createTable, Boolean useIndex, Integer dimension) {
