@@ -9,6 +9,7 @@ import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
 import dev.langchain4j.store.embedding.EmbeddingSearchResult;
 import dev.langchain4j.store.embedding.EmbeddingStore;
 import dev.langchain4j.store.embedding.filter.Filter;
+import oracle.jdbc.OracleConnection;
 import oracle.jdbc.OracleType;
 import oracle.sql.VECTOR;
 import oracle.sql.json.OracleJsonFactory;
@@ -16,15 +17,18 @@ import oracle.sql.json.OracleJsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.sql.Array;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 import static dev.langchain4j.internal.Utils.getOrDefault;
 import static dev.langchain4j.internal.Utils.isNullOrEmpty;
@@ -46,6 +50,8 @@ public class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
     private final Integer accuracy;
     private final DistanceType distanceType;
     private final IndexType indexType;
+
+    private final OracleFilterMapper filterMapper = new OracleFilterMapper();
 
 
     public OracleEmbeddingStore(DataSource dataSource,
@@ -156,7 +162,13 @@ public class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
      */
     @Override
     public void remove(String id) {
-
+        String deleteQuery = String.format("delete from %s where id = ?", table);
+        try (Connection connection = dataSource.getConnection(); PreparedStatement stmt = connection.prepareStatement(deleteQuery)) {
+            stmt.setString(1, id);
+            stmt.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to delete embedding " + id, e);
+        }
     }
 
     /**
@@ -166,7 +178,19 @@ public class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
      */
     @Override
     public void removeAll(Collection<String> ids) {
+        String inClause = "(" + ids.stream().map(id -> "?")
+                .collect(Collectors.joining(",")) + ")";
+        String deleteQuery = String.format("delete from %s where id in %s", table, inClause);
 
+        try (Connection connection = dataSource.getConnection(); PreparedStatement stmt = connection.prepareStatement(deleteQuery)) {
+            List<String> idList = new ArrayList<>(ids);
+            for (int i = 0; i < idList.size(); i++) {
+                stmt.setString(i+1, idList.get(i));
+            }
+            stmt.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     /**
@@ -178,7 +202,13 @@ public class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
      */
     @Override
     public void removeAll(Filter filter) {
-
+        String whereClause = filterMapper.whereClause(filter);
+        String deleteQuery = String.format("delete from %s where %s", table, whereClause);
+        try (Connection connection = dataSource.getConnection(); Statement stmt = connection.createStatement()) {
+            stmt.executeUpdate(deleteQuery);
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     /**
@@ -186,7 +216,11 @@ public class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
      */
     @Override
     public void removeAll() {
-
+        try (Connection connection = dataSource.getConnection(); Statement stmt = connection.createStatement()) {
+            stmt.executeUpdate(String.format("truncate table %s", table));
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     /**
