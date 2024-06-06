@@ -6,6 +6,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import com.oracle.bmc.objectstorage.ObjectStorageClient;
+import com.oracle.bmc.objectstorage.model.ObjectSummary;
 import com.oracle.bmc.objectstorage.requests.GetObjectRequest;
 import com.oracle.bmc.objectstorage.requests.ListObjectsRequest;
 import com.oracle.bmc.objectstorage.responses.GetObjectResponse;
@@ -79,28 +80,7 @@ public class OCIObjectStorageDocumentLoader {
      * @return A list of documents from the bucket matching the prefix.
      */
     public List<Document> loadDocuments(String bucket, String prefix, DocumentParser parser) {
-        ListObjectsRequest.Builder requestBuilder = ListObjectsRequest.builder()
-                .namespaceName(namespace)
-                .bucketName(bucket)
-                .prefix(prefix);
-        if (!limit.equals(DEFAULT_LIMIT)) {
-            requestBuilder.limit(limit);
-        }
-        ListObjectsResponse response = objectStorageClient.listObjects(requestBuilder.build());
-        List<Document> documents = new ArrayList<>(toDocuments(bucket, parser, response));
-        while (response.getListObjects().getNextStartWith() != null) {
-            requestBuilder = ListObjectsRequest.builder()
-                    .namespaceName(namespace)
-                    .bucketName(bucket)
-                    .prefix(prefix)
-                    .start(response.getListObjects().getNextStartWith());
-            if (!limit.equals(DEFAULT_LIMIT)) {
-                requestBuilder.limit(limit);
-            }
-            response = objectStorageClient.listObjects(requestBuilder.build());
-            documents.addAll(toDocuments(bucket, parser, response));
-        }
-        return documents;
+        return streamDocuments(bucket, prefix, parser).collect(Collectors.toList());
     }
 
     /**
@@ -111,26 +91,74 @@ public class OCIObjectStorageDocumentLoader {
      * @return A list of documents from the bucket.
      */
     public List<Document> loadDocuments(String bucket, DocumentParser parser) {
-        return loadDocuments(bucket, null, parser);
+        return streamDocuments(bucket, parser).collect(Collectors.toList());
     }
 
-    private List<Document> toDocuments(String bucket, DocumentParser parser, ListObjectsResponse response) {
-        return response.getListObjects().getObjects()
-                .stream()
-                // ignore empty objects and directories
-                .filter(o -> !o.getName().endsWith("/"))
-                // convert to langchain document
+    /**
+     * Load documents in an Object Storage bucket for a given prefix.
+     *
+     * @param bucket The Object Storage bucket name to load from.
+     * @param prefix The prefix objects should start with.
+     * @param parser The parser used when parsing the object text.
+     * @return A stream of documents from the bucket matching the prefix.
+     */
+    public Stream<Document> streamDocuments(String bucket, String prefix, DocumentParser parser) {
+        return loadObjectList(bucket, prefix, parser).stream()
                 .flatMap((o -> {
                     try {
-                        return Stream.of(loadDocument(bucket, o.getName(), parser));
+                        return Stream.of(loadDocument(bucket, o, parser));
                     } catch (Exception e) {
                         if (skipObjectLoadOnError) {
-                            log.warn("Failed to load object {}/{}, skipping", bucket, o.getName(), e);
+                            log.warn("Failed to load object {}/{}, skipping", bucket, o, e);
                             return Stream.empty();
                         }
                         throw e;
                     }
-                }))
+                }));
+    }
+
+    /**
+     * Loads all documents from an Object Storage bucket.
+     *
+     * @param bucket The Object Storage bucket name to load from.
+     * @param parser The parser used when parsing the object text.
+     * @return A stream of documents from the bucket.
+     */
+    public Stream<Document> streamDocuments(String bucket, DocumentParser parser) {
+        return streamDocuments(bucket, null, parser);
+    }
+
+    private List<String> loadObjectList(String bucket, String prefix, DocumentParser parser) {
+        ListObjectsRequest.Builder requestBuilder = ListObjectsRequest.builder()
+                .namespaceName(namespace)
+                .bucketName(bucket)
+                .prefix(prefix);
+        if (!limit.equals(DEFAULT_LIMIT)) {
+            requestBuilder.limit(limit);
+        }
+        ListObjectsResponse response = objectStorageClient.listObjects(requestBuilder.build());
+        List<String> objectNames = new ArrayList<>(toObjectNames(response));
+        while (response.getListObjects().getNextStartWith() != null) {
+            requestBuilder = ListObjectsRequest.builder()
+                    .namespaceName(namespace)
+                    .bucketName(bucket)
+                    .prefix(prefix)
+                    .start(response.getListObjects().getNextStartWith());
+            if (!limit.equals(DEFAULT_LIMIT)) {
+                requestBuilder.limit(limit);
+            }
+            response = objectStorageClient.listObjects(requestBuilder.build());
+            objectNames.addAll(toObjectNames(response));
+        }
+        return objectNames;
+    }
+
+    private List<String> toObjectNames(ListObjectsResponse response) {
+        return response.getListObjects().getObjects()
+                .stream()
+                .map(ObjectSummary::getName)
+                .filter(name -> !name.endsWith("/"))
+                // ignore empty objects and directories
                 .collect(Collectors.toList());
     }
 }
