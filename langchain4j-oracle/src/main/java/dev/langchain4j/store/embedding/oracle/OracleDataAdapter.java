@@ -37,8 +37,12 @@ class OracleDataAdapter {
         return map;
     }
 
-    VECTOR toVECTOR(Embedding embedding) throws SQLException {
-        return VECTOR.ofFloat64Values(embedding.vector());
+    VECTOR toVECTOR(Embedding embedding, boolean normalizeVector) throws SQLException {
+        float[] vector = embedding.vector();
+        if (normalizeVector) {
+            vector = normalize(vector);
+        }
+        return VECTOR.ofFloat64Values(vector);
     }
 
     OracleJsonObject toJSON(Map<String, Object> metadata) {
@@ -66,5 +70,25 @@ class OracleDataAdapter {
             ojson.put(entry.getKey(), String.valueOf(entry.getValue()));
         }
         return ojson;
+    }
+
+    private float[] normalize(float[] v) {
+        double squaredSum = 0d;
+
+        for (float e : v) {
+            squaredSum += e * e;
+        }
+
+        final float magnitude = (float) Math.sqrt(squaredSum);
+
+        if (magnitude > 0) {
+            final float multiplier = 1f / magnitude;
+            final int length = v.length;
+            for (int i = 0; i < length; i++) {
+                v[i] *= multiplier;
+            }
+        }
+
+        return v;
     }
 }

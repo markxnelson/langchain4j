@@ -48,6 +48,7 @@ public class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
     private final Integer accuracy;
     private final DistanceType distanceType;
     private final IndexType indexType;
+    private final Boolean normalizeVectors;
 
     private final OracleJSONPathFilterMapper filterMapper = new OracleJSONPathFilterMapper();
     private final OracleDataAdapter dataAdapter = new OracleDataAdapter();
@@ -60,13 +61,15 @@ public class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
                                 IndexType indexType,
                                 Boolean useIndex,
                                 Boolean createTable,
-                                Boolean dropTableFirst
+                                Boolean dropTableFirst,
+                                Boolean normalizeVectors
     ) {
         this.dataSource = ensureNotNull(dataSource, "dataSource");
         this.table = ensureNotBlank(table, "table");
         this.accuracy = getOrDefault(accuracy, DEFAULT_ACCURACY);
         this.distanceType = getOrDefault(distanceType, DEFAULT_DISTANCE_TYPE);
         this.indexType = getOrDefault(indexType, DEFAULT_INDEX_TYPE);
+        this.normalizeVectors = getOrDefault(normalizeVectors, false);
 
         useIndex = getOrDefault(useIndex, false);
         createTable = getOrDefault(createTable, true);
@@ -236,6 +239,13 @@ public class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
      */
     @Override
     public EmbeddingSearchResult<TextSegment> search(EmbeddingSearchRequest request) {
+        if (distanceType != DistanceType.COSINE && distanceType != DistanceType.DOT) {
+            throw new UnsupportedOperationException("Similarity search for distance type " + distanceType + " not supported");
+        }
+        if (!normalizeVectors) {
+            throw new UnsupportedOperationException("Similarity search vector normalization. See the 'normalizeVectors property of the OracleEmbeddingStore'");
+        }
+
         Embedding requestEmbedding = request.queryEmbedding();
         int maxResults = request.maxResults();
         double minScore = request.minScore();
@@ -243,15 +253,15 @@ public class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
         List<EmbeddingMatch<TextSegment>> matches = new ArrayList<>();
         String searchQuery = String.format("select * from\n" +
                 "(\n" +
-                "select id, content, metadata, embedding, %s\n" +
+                "select id, content, metadata, embedding, (1 - %s) as score\n" +
                 "from %s\n" +
                 "%s" +
-                "order by distance\n" +
+                "order by score desc\n" +
                 ")\n" +
-                "where distance <= ?\n" +
+                "where score >= ?\n" +
                 "%s", vectorDistanceClause(), table, filterClause, accuracyClause(maxResults));
         try (Connection connection = dataSource.getConnection(); PreparedStatement stmt = connection.prepareStatement(searchQuery)) {
-            stmt.setObject(1, dataAdapter.toVECTOR(requestEmbedding), OracleType.VECTOR.getVendorTypeNumber());
+            stmt.setObject(1, dataAdapter.toVECTOR(requestEmbedding, normalizeVectors), OracleType.VECTOR.getVendorTypeNumber());
             stmt.setObject(2, minScore, OracleType.NUMBER.getVendorTypeNumber());
             try (ResultSet rs = stmt.executeQuery()) {
                 while (rs.next()) {
@@ -259,13 +269,13 @@ public class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
                     double[] embeddings = rs.getObject("embedding", double[].class);
                     Embedding embedding = new Embedding(dataAdapter.toFloatArray(embeddings));
                     String content = rs.getObject("content", String.class);
-                    double distance = rs.getObject("distance", BigDecimal.class).doubleValue();
+                    double score = rs.getObject("score", BigDecimal.class).doubleValue();
                     TextSegment textSegment = null;
                     if (isNotNullOrBlank(content)) {
                         Map<String, Object> metadata = dataAdapter.toMap(rs.getObject("metadata", OracleJsonObject.class));
                         textSegment = TextSegment.from(content, new Metadata(metadata));
                     }
-                    matches.add(new EmbeddingMatch<>(distance, id, embedding, textSegment));
+                    matches.add(new EmbeddingMatch<>(score, id, embedding, textSegment));
                 }
             }
         } catch (SQLException e) {
@@ -282,7 +292,7 @@ public class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
     }
 
     private String vectorDistanceClause() {
-        String clause = String.format("vector_distance(embedding, ?, %s) as distance", distanceType.name());
+        String clause = String.format("vector_distance(embedding, ?, %s)", distanceType.name());
         if (distanceType == DistanceType.DOT) {
             clause = String.format("(1+%s)/2", clause);
         }
@@ -320,7 +330,7 @@ public class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
                     stmt.setString(2, "");
                     stmt.setObject(3, dataAdapter.toJSON(null), OracleType.JSON.getVendorTypeNumber());
                 }
-                stmt.setObject(4, dataAdapter.toVECTOR(embeddings.get(i)), OracleType.VECTOR.getVendorTypeNumber());
+                stmt.setObject(4, dataAdapter.toVECTOR(embeddings.get(i), normalizeVectors), OracleType.VECTOR.getVendorTypeNumber());
                 stmt.addBatch();
             }
             stmt.executeBatch();

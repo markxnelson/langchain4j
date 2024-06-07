@@ -8,13 +8,12 @@ import java.sql.Statement;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
-import dev.langchain4j.model.embedding.AllMiniLmL6V2QuantizedEmbeddingModel;
-import dev.langchain4j.model.embedding.EmbeddingModel;
+import dev.langchain4j.store.embedding.EmbeddingMatch;
 import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
 import dev.langchain4j.store.embedding.EmbeddingSearchResult;
 import dev.langchain4j.store.embedding.filter.Filter;
@@ -39,24 +38,16 @@ public class OracleEmbeddingStoreIT {
             .withPassword(("testpwd"));
     static OracleEmbeddingStore store;
     static DataSource dataSource;
-    private static EmbeddingModel embeddingModel = new AllMiniLmL6V2QuantizedEmbeddingModel();
     private static String table = "vector_store";
-    private static Metadata m3 = new Metadata();
 
-    static {
-        m3.put("author", "J. R. R. Tolkien");
-        m3.put("age", 81);
-    }
-
-    private static String c1 = "hello, world!";
-    private static String c2 = "There are 50 states in the USA.";
-    private static String c3 = "The Hobbit is one of Tolkien's many works.";
-
-    private static Embedding e1 = embeddingModel.embed(c1).content();
-    private static Embedding e2 = embeddingModel.embed(c2).content();
-    private static Embedding e3 = embeddingModel.embed(c3).content();
-
-    private static TextSegment ts3 = new TextSegment(c3, m3);
+    private static final EmbeddingWrapper w1 = EmbeddingWrapper.of("hello, world!");
+    private static final EmbeddingWrapper w2 = EmbeddingWrapper.of("There are 50 states in the USA.");
+    private static final EmbeddingWrapper w3 = EmbeddingWrapper.of("The Hobbit is one of Tolkien's many works.")
+            .kv("author", "J. R. R. Tolkien")
+            .kv("age", 81);
+    private static final EmbeddingWrapper w4 = EmbeddingWrapper.of("Langchain4j rocks!")
+            .kv("opensource", "yes!")
+            .kv("keyword", "ai");
 
     @BeforeAll
     static void setup() throws SQLException {
@@ -66,30 +57,30 @@ public class OracleEmbeddingStoreIT {
         ds.setPassword(oracleContainer.getPassword());
         ds.setURL(oracleContainer.getJdbcUrl());
         dataSource = ds;
-        store = new OracleEmbeddingStore(ds, table, 384, null, null, null, true, true, true);
+        store = new OracleEmbeddingStore(ds, table, 384, null, null, null, true, true, true, false);
     }
 
     @Test
     void addAndRemove() {
-        String id1 = store.add(e1);
+        String id1 = store.add(w1.getEmbedding());
         assertThat(id1).isNotNull();
         store.remove(id1);
-        String id2 = store.add(e1);
+        String id2 = store.add(w2.getEmbedding());
         assertThat(id2).isNotNull();
         assertThat(id2).isNotEqualTo(id1);
     }
 
     @Test
     void addCollectionRemoveCollection() {
-        List<String> ids = store.addAll(listOf(e1, e2, e3));
+        List<String> ids = store.addAll(listOf(w1, w2, w3));
         store.removeAll(ids);
     }
 
     public static Stream<Arguments> addRemoveFilters() {
         return Stream.of(
-                Arguments.of(e3, ts3, MetadataFilterBuilder.metadataKey("author").isEqualTo("J. R. R. Tolkien")),
-                Arguments.of(e3, ts3, MetadataFilterBuilder.metadataKey("age").isEqualTo(81)),
-                Arguments.of(e3, ts3, MetadataFilterBuilder.metadataKey("age").isGreaterThan(50))
+                Arguments.of(w3.getEmbedding(), w3.getTextSegment(), MetadataFilterBuilder.metadataKey("author").isEqualTo("J. R. R. Tolkien")),
+                Arguments.of(w3.getEmbedding(), w3.getTextSegment(), MetadataFilterBuilder.metadataKey("age").isEqualTo(81)),
+                Arguments.of(w3.getEmbedding(), w3.getTextSegment(), MetadataFilterBuilder.metadataKey("age").isGreaterThan(50))
         );
     }
 
@@ -104,24 +95,63 @@ public class OracleEmbeddingStoreIT {
 
     @Test
     void addWithId() {
-        store.add(UUID.randomUUID().toString(), e2);
+        store.add(UUID.randomUUID().toString(), w2.getEmbedding());
     }
 
     @Test
     void addWithSegment() {
-        String id3 = store.add(e3, ts3);
+        String id3 = store.add(w3.getEmbedding(), w3.getTextSegment());
         assertThat(id3).isNotNull();
     }
 
-    @Test
-    void search() {
-        store.add(e3, ts3);
-        EmbeddingSearchResult<TextSegment> matches = store.search(new EmbeddingSearchRequest(e3, 1, 1.0, null));
-        System.out.println(matches);
+    public static Stream<Arguments> searchArgs() {
+        return Stream.of(
+                Arguments.of(OracleEmbeddingStore.DistanceType.COSINE),
+                Arguments.of(OracleEmbeddingStore.DistanceType.DOT)
+        );
     }
 
-    private List<Embedding> listOf(Embedding... embedding) {
-        return Arrays.asList(embedding);
+    @ParameterizedTest
+    @MethodSource("searchArgs")
+    void searchDistanceTypes(OracleEmbeddingStore.DistanceType distanceType) {
+        String tableName = "vector_store_2";
+        OracleEmbeddingStore embeddingStore = new OracleEmbeddingStore(dataSource, tableName, 384, null, distanceType, null, null, null, true, true);
+        addWrappers(embeddingStore, w1, w2, w3, w4);
+
+        // Assert we can find embeddings that exit
+        EmbeddingWrapper searchEmbedding = EmbeddingWrapper.of("Langchain4j");
+        EmbeddingSearchResult<TextSegment> result = embeddingStore.search(EmbeddingSearchRequest.builder()
+                .queryEmbedding(searchEmbedding.getEmbedding())
+                .maxResults(1)
+                .minScore(0.7)
+                .build());
+        List<EmbeddingMatch<TextSegment>> matches = result.matches();
+        assertThat(matches).hasSize(1);
+        EmbeddingMatch<TextSegment> match = matches.get(0);
+        assertThat(match.embedded().text()).isEqualTo(w4.getTextSegment().text());
+        assertThat(match.embedded().metadata().getString("keyword")).isEqualTo("ai");
+
+        // Assert
+        EmbeddingWrapper searchEmbedding2 = EmbeddingWrapper.of("ERROR");
+        EmbeddingSearchResult<TextSegment> result2 = embeddingStore.search(EmbeddingSearchRequest.builder()
+                .queryEmbedding(searchEmbedding2.getEmbedding())
+                .maxResults(1)
+                .minScore(0.7)
+                .build());
+        List<EmbeddingMatch<TextSegment>> matches2 = result2.matches();
+        assertThat(matches2).hasSize(0);
+    }
+
+    private void addWrappers(OracleEmbeddingStore store, EmbeddingWrapper... wrapper) {
+        for (EmbeddingWrapper w : wrapper) {
+            store.add(w.getEmbedding(), w.getTextSegment());
+        }
+    }
+
+    private List<Embedding> listOf(EmbeddingWrapper... es) {
+        return Arrays.stream(es)
+                .map(EmbeddingWrapper::getEmbedding)
+                .collect(Collectors.toList());
     }
 
     private void assertPresent(String id) {
@@ -135,7 +165,6 @@ public class OracleEmbeddingStoreIT {
     private void assertPresence(String id, boolean exists) {
         try (Connection connection = dataSource.getConnection(); Statement stmt = connection.createStatement()) {
             ResultSet rs = stmt.executeQuery(String.format("select * from %s where id = '%s'", table, id));
-            System.out.println(rs.isBeforeFirst());
             assertThat(rs.isBeforeFirst()).isEqualTo(exists);
         } catch (SQLException e) {
             throw new RuntimeException(e);
