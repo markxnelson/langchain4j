@@ -60,6 +60,7 @@ public class OracleEmbeddingStoreIT {
     @BeforeAll
     static void setup() throws SQLException {
         oracleContainer.start();
+        dataSource = new OracleDataSource();
         dataSource.setUser(oracleContainer.getUsername());
         dataSource.setPassword(oracleContainer.getPassword());
         dataSource.setURL(oracleContainer.getJdbcUrl());
