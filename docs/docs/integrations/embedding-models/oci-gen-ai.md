@@ -15,17 +15,10 @@ To install langchain4j with OCI GenAI to your project, add the following depende
 For Maven project `pom.xml`
 
 ```xml
-
 <dependency>
     <groupId>dev.langchain4j</groupId>
     <artifactId>langchain4j-oci-genai</artifactId>
     <version>{your-version}</version> <!-- Specify your version here -->
-</dependency>
-
-<dependency>
-    <groupId>dev.langchain4j</groupId>
-    <artifactId>langchain4j-oci-genai</artifactId>
-    <version>{your-version}</version>
 </dependency>
 ```
 

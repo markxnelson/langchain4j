@@ -11,10 +11,6 @@ import oracle.sql.json.OracleJsonFactory;
 import oracle.sql.json.OracleJsonObject;
 import oracle.sql.json.OracleJsonValue;
 
-import static oracle.sql.json.OracleJsonValue.OracleJsonType.FALSE;
-import static oracle.sql.json.OracleJsonValue.OracleJsonType.STRING;
-import static oracle.sql.json.OracleJsonValue.OracleJsonType.TRUE;
-
 class OracleDataAdapter {
     float[] toFloatArray(double[] vector) {
         float[] result = new float[vector.length];
