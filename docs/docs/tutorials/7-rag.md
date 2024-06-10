@@ -266,6 +266,7 @@ You can create a `Document` from a `String`, but a simpler method is to use one 
 - `AmazonS3DocumentLoader` from the `langchain4j-document-loader-amazon-s3` module
 - `AzureBlobStorageDocumentLoader` from the `langchain4j-document-loader-azure-storage-blob` module
 - `GitHubDocumentLoader` from the `langchain4j-document-loader-github` module
+- `OCIObjectStorageDocumentLoader` from the `langchain4j-document-loader-oci-object-storage` module
 - `TencentCosDocumentLoader` from the `langchain4j-document-loader-tencent-cos` module
 
 

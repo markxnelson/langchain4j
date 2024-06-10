@@ -1,7 +1,5 @@
 package dev.langchain4j.model.oci;
 
-import com.oracle.bmc.generativeaiinference.model.OnDemandServingMode;
-import com.oracle.bmc.generativeaiinference.model.ServingMode;
 import lombok.Getter;
 
 @Getter
