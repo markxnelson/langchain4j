@@ -33,12 +33,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 @Testcontainers
 public class OracleEmbeddingStoreIT {
     @Container
-    static OracleContainer oracleContainer = new OracleContainer("gvenzl/oracle-free:23.4-slim-faststart")
+    private static final OracleContainer oracleContainer = new OracleContainer("gvenzl/oracle-free:23.4-slim-faststart")
             .withUsername("testuser")
             .withPassword(("testpwd"));
-    static OracleEmbeddingStore store;
-    static DataSource dataSource;
-    private static String table = "vector_store";
+    private static OracleEmbeddingStore store;
+    private static OracleDataSource dataSource;
+    private static final String table = "vector_store";
 
     private static final EmbeddingWrapper w1 = EmbeddingWrapper.of("hello, world!");
     private static final EmbeddingWrapper w2 = EmbeddingWrapper.of("There are 50 states in the USA.");
@@ -52,12 +52,18 @@ public class OracleEmbeddingStoreIT {
     @BeforeAll
     static void setup() throws SQLException {
         oracleContainer.start();
-        OracleDataSource ds = new OracleDataSource();
-        ds.setUser(oracleContainer.getUsername());
-        ds.setPassword(oracleContainer.getPassword());
-        ds.setURL(oracleContainer.getJdbcUrl());
-        dataSource = ds;
-        store = new OracleEmbeddingStore(ds, table, 384, null, null, null, true, true, true, false);
+        dataSource.setUser(oracleContainer.getUsername());
+        dataSource.setPassword(oracleContainer.getPassword());
+        dataSource.setURL(oracleContainer.getJdbcUrl());
+        store = OracleEmbeddingStore.builder()
+            .dataSource(dataSource)
+            .table(table)
+            .dimension(384)
+            .useIndex(true)
+            .createTable(true)
+            .dropTableFirst(true)
+            .normalizeVectors(false)
+            .build();
     }
 
     @Test
@@ -114,8 +120,14 @@ public class OracleEmbeddingStoreIT {
     @ParameterizedTest
     @MethodSource("searchArgs")
     void searchDistanceTypes(OracleEmbeddingStore.DistanceType distanceType) {
-        String tableName = "vector_store_2";
-        OracleEmbeddingStore embeddingStore = new OracleEmbeddingStore(dataSource, tableName, 384, null, distanceType, null, null, null, true, true);
+        OracleEmbeddingStore embeddingStore = OracleEmbeddingStore.builder()
+            .dataSource(dataSource)
+            .table("vector_store_2")
+            .dimension(384)
+            .distanceType(distanceType)
+            .dropTableFirst(true)
+            .normalizeVectors(true)
+            .build();
         addWrappers(embeddingStore, w1, w2, w3, w4);
 
         // Assert we can find embeddings that exit

@@ -10,6 +10,7 @@ import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
 import dev.langchain4j.store.embedding.EmbeddingSearchResult;
 import dev.langchain4j.store.embedding.EmbeddingStore;
 import dev.langchain4j.store.embedding.filter.Filter;
+import lombok.Builder;
 import oracle.jdbc.OracleType;
 import oracle.sql.json.OracleJsonObject;
 import org.slf4j.Logger;
@@ -53,6 +54,7 @@ public class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
     private final OracleJSONPathFilterMapper filterMapper = new OracleJSONPathFilterMapper();
     private final OracleDataAdapter dataAdapter = new OracleDataAdapter();
 
+    @Builder
     public OracleEmbeddingStore(DataSource dataSource,
                                 String table,
                                 Integer dimension,
