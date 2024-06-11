@@ -177,8 +177,14 @@ public class OracleEmbeddingStoreIT {
     @ParameterizedTest
     @MethodSource("searchFilters")
     void searchWithFilter(OracleEmbeddingStore.DistanceType distanceType, Filter filter) {
-        String tableName = "vector_store_3";
-        OracleEmbeddingStore embeddingStore = new OracleEmbeddingStore(dataSource, tableName, 384, null, distanceType, null, null, null, true, true);
+        OracleEmbeddingStore embeddingStore = OracleEmbeddingStore.builder()
+            .dataSource(dataSource)
+            .table("vector_store_3")
+            .dimension(384)
+            .distanceType(distanceType)
+            .dropTableFirst(true)
+            .normalizeVectors(true)
+            .build();
         addWrappers(embeddingStore, w1, w2, w3, w4, w5);
 
         EmbeddingWrapper searchEmbedding = EmbeddingWrapper.of("USA");
