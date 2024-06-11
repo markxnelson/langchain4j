@@ -19,6 +19,8 @@ public class OracleJSONPathFilterMapperTest {
 
     public static Stream<Arguments> filters() {
         return Stream.of(
+                Arguments.of(Filter.not(MetadataFilterBuilder.metadataKey("key").isEqualTo("abc")), query("!(@.key == \"abc\")")),
+                Arguments.of(MetadataFilterBuilder.metadataKey("key").isNotIn(1, 2, 3), query("!(@.key in (1,2,3))")),
                 Arguments.of(MetadataFilterBuilder.metadataKey("key").isIn(1, 2, 3), query("@.key in (1,2,3)")),
                 Arguments.of(MetadataFilterBuilder.metadataKey("key").isLessThanOrEqualTo(1).and(MetadataFilterBuilder.metadataKey("key").isGreaterThanOrEqualTo(-1)), query("@.key <= 1 && @.key >= -1")),
                 Arguments.of(MetadataFilterBuilder.metadataKey("key").isGreaterThan(1).and(MetadataFilterBuilder.metadataKey("key").isLessThan(2)), query("@.key > 1 && @.key < 2")),

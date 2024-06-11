@@ -167,6 +167,9 @@ public class OracleEmbeddingStoreIT {
 
     public static Stream<Arguments> searchFilters() {
         return Stream.of(
+                Arguments.of(OracleEmbeddingStore.DistanceType.COSINE, Filter.not(MetadataFilterBuilder.metadataKey("government_type").isEqualTo("constitutional monarchy"))),
+                Arguments.of(OracleEmbeddingStore.DistanceType.DOT, MetadataFilterBuilder.metadataKey("government_type").isNotIn("constitutional monarchy", "xyz")),
+                Arguments.of(OracleEmbeddingStore.DistanceType.DOT, MetadataFilterBuilder.metadataKey("government_type").isIn("constitutional republic", "xyz")),
                 Arguments.of(OracleEmbeddingStore.DistanceType.DOT, MetadataFilterBuilder.metadataKey("government_type").isNotEqualTo("constitutional monarchy")),
                 Arguments.of(OracleEmbeddingStore.DistanceType.COSINE, MetadataFilterBuilder.metadataKey("government_type").isEqualTo("constitutional republic")),
                 Arguments.of(OracleEmbeddingStore.DistanceType.DOT, MetadataFilterBuilder.metadataKey("territories").isGreaterThan(1)),

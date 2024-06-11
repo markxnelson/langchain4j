@@ -46,13 +46,13 @@ public class OracleJSONPathFilterMapper {
             return String.format("%s in %s", formatKey(in.key()), formatValues(in.comparisonValues()));
         } else if (filter instanceof IsNotIn) {
             IsNotIn ni = (IsNotIn) filter;
-            return String.format("%s not in %s", formatKey(ni.key()), formatValues(ni.comparisonValues()));
+            return String.format("!(%s in %s)", formatKey(ni.key()), formatValues(ni.comparisonValues()));
+        } else if (filter instanceof Not) {
+            Not n = (Not) filter;
+            return String.format("!(%s)", map(n.expression()));
         } else if (filter instanceof And) {
             And and = (And) filter;
             return String.format("%s && %s", map(and.left()), map(and.right()));
-        } else if (filter instanceof Not) {
-            Not not = (Not) filter;
-            return String.format("nin (%s)", map(not.expression()));
         } else if (filter instanceof Or) {
             Or or = (Or) filter;
             return String.format("(%s || %s)", map(or.left()), map(or.right()));
