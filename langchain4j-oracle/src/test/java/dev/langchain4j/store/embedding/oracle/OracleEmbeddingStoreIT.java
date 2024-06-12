@@ -17,7 +17,8 @@ import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
 import dev.langchain4j.store.embedding.EmbeddingSearchResult;
 import dev.langchain4j.store.embedding.filter.Filter;
 import dev.langchain4j.store.embedding.filter.MetadataFilterBuilder;
-import oracle.jdbc.pool.OracleDataSource;
+import oracle.ucp.jdbc.PoolDataSource;
+import oracle.ucp.jdbc.PoolDataSourceFactory;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -36,7 +37,7 @@ public class OracleEmbeddingStoreIT {
             .withUsername("testuser")
             .withPassword(("testpwd"));
     private static OracleEmbeddingStore store;
-    private static OracleDataSource dataSource;
+    private static PoolDataSource dataSource;
     private static final String table = "vector_store";
 
     private static final EmbeddingWrapper w1 = EmbeddingWrapper.of("hello, world!");
@@ -59,7 +60,9 @@ public class OracleEmbeddingStoreIT {
     @BeforeAll
     static void setup() throws SQLException {
         oracleContainer.start();
-        dataSource = new OracleDataSource();
+        dataSource = PoolDataSourceFactory.getPoolDataSource();
+        dataSource.setConnectionFactoryClassName("oracle.jdbc.pool.OracleDataSource");
+        dataSource.setConnectionPoolName("EMBEDDING_STORE_IT");
         dataSource.setUser(oracleContainer.getUsername());
         dataSource.setPassword(oracleContainer.getPassword());
         dataSource.setURL(oracleContainer.getJdbcUrl());
