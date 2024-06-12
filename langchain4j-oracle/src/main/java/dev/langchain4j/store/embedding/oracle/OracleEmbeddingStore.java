@@ -41,12 +41,14 @@ public class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
     private static final Logger log = LoggerFactory.getLogger(OracleEmbeddingStore.class);
     private static final Integer DEFAULT_DIMENSIONS = -1;
     private static final Integer DEFAULT_ACCURACY = -1;
+    private static final Integer DEFAULT_BATCH_SIZE = 50; // Oracle recommends a batch size between 50 and 100.
     private static final DistanceType DEFAULT_DISTANCE_TYPE = DistanceType.COSINE;
     private static final IndexType DEFAULT_INDEX_TYPE = IndexType.IVF;
 
     private final String table;
     private final DataSource dataSource;
     private final Integer accuracy;
+    private final Integer batchSize;
     private final DistanceType distanceType;
     private final IndexType indexType;
     private final Boolean normalizeVectors;
@@ -59,6 +61,7 @@ public class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
                                 String table,
                                 Integer dimension,
                                 Integer accuracy,
+                                Integer batchSize,
                                 DistanceType distanceType,
                                 IndexType indexType,
                                 Boolean useIndex,
@@ -69,6 +72,7 @@ public class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
         this.dataSource = ensureNotNull(dataSource, "dataSource");
         this.table = ensureNotBlank(table, "table");
         this.accuracy = getOrDefault(accuracy, DEFAULT_ACCURACY);
+        this.batchSize = getOrDefault(batchSize, DEFAULT_BATCH_SIZE);
         this.distanceType = getOrDefault(distanceType, DEFAULT_DISTANCE_TYPE);
         this.indexType = getOrDefault(indexType, DEFAULT_INDEX_TYPE);
         this.normalizeVectors = getOrDefault(normalizeVectors, false);
@@ -334,6 +338,13 @@ public class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
                 }
                 stmt.setObject(4, dataAdapter.toVECTOR(embeddings.get(i), normalizeVectors), OracleType.VECTOR.getVendorTypeNumber());
                 stmt.addBatch();
+                if (i % batchSize == batchSize - 1) {
+                    stmt.executeBatch();
+                }
+            }
+            // if any remaining batches, execute them
+            if (ids.size() % batchSize != 0) {
+                stmt.executeBatch();
             }
             stmt.executeBatch();
         } catch (SQLException e) {

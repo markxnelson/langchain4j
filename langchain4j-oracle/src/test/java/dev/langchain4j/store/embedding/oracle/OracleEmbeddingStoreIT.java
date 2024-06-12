@@ -1,6 +1,5 @@
 package dev.langchain4j.store.embedding.oracle;
 
-import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -76,6 +75,25 @@ public class OracleEmbeddingStoreIT {
     }
 
     @Test
+    void addBatch() {
+        String tableName = "vector_table_batch";
+        OracleEmbeddingStore embeddingStore = OracleEmbeddingStore.builder()
+                .table(tableName)
+                .dataSource(dataSource)
+                .batchSize(2)
+                .dimension(384)
+                .useIndex(true)
+                .createTable(true)
+                .dropTableFirst(true)
+                .normalizeVectors(false)
+                .build();
+        List<String> ids = embeddingStore.addAll(listOf(w1, w2, w3, w4, w5));
+        for (String id : ids) {
+            assertPresent(id, tableName);
+        }
+    }
+
+    @Test
     void addAndRemove() {
         String id1 = store.add(w1.getEmbedding());
         assertThat(id1).isNotNull();
@@ -103,9 +121,9 @@ public class OracleEmbeddingStoreIT {
     @MethodSource("addRemoveFilters")
     void addRemoveWithFilter(Embedding embedding, TextSegment textSegment, Filter filter) {
         String id = store.add(embedding, textSegment);
-        assertPresent(id);
+        assertPresent(id, table);
         store.removeAll(filter);
-        assertNotPresent(id);
+        assertNotPresent(id, table);
     }
 
     @Test
@@ -221,17 +239,17 @@ public class OracleEmbeddingStoreIT {
                 .collect(Collectors.toList());
     }
 
-    private void assertPresent(String id) {
-        assertPresence(id, true);
+    private void assertPresent(String id, String tableName) {
+        assertPresence(id, tableName, true);
     }
 
-    private void assertNotPresent(String id) {
-        assertPresence(id, false);
+    private void assertNotPresent(String id, String tableName) {
+        assertPresence(id, tableName,false);
     }
 
-    private void assertPresence(String id, boolean exists) {
+    private void assertPresence(String id, String tableName, boolean exists) {
         try (Connection connection = dataSource.getConnection(); Statement stmt = connection.createStatement()) {
-            ResultSet rs = stmt.executeQuery(String.format("select * from %s where id = '%s'", table, id));
+            ResultSet rs = stmt.executeQuery(String.format("select * from %s where id = '%s'", tableName, id));
             assertThat(rs.isBeforeFirst()).isEqualTo(exists);
         } catch (SQLException e) {
             throw new RuntimeException(e);
