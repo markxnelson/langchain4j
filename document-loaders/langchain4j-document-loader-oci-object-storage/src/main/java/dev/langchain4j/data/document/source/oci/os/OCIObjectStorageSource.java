@@ -8,6 +8,10 @@ import dev.langchain4j.data.document.Metadata;
 
 import static java.lang.String.format;
 
+/**
+ * OCI Object Storage implementation of Langchain4j DocumentSource
+ * Document InputStream represents an object in an OCI Object Storage bucket.
+ */
 public class OCIObjectStorageSource implements DocumentSource {
     public static final String SOURCE = "source";
 

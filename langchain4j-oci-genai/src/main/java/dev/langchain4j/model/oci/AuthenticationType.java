@@ -2,6 +2,9 @@ package dev.langchain4j.model.oci;
 
 import lombok.Getter;
 
+/**
+ * Authentication Type for OCIClientProvider builder.
+ */
 @Getter
 public enum AuthenticationType {
 

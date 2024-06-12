@@ -37,6 +37,12 @@ import static dev.langchain4j.internal.ValidationUtils.ensureNotNull;
 import static dev.langchain4j.internal.ValidationUtils.ensureTrue;
 import static java.util.Collections.singletonList;
 
+/**
+ * Oracle Database as a Langchain4j EmbeddingStore.
+ * Similarity search currently supports both COSINE and DOT distance types when vectors are normalized.
+ * Unless directed not to, the OracleEmbeddingStore will automatically create a vector table, indexing the embedding.
+ * The embedding index uses index type IVF as of Oracle Database 23.4.
+ */
 public class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
     private static final Logger log = LoggerFactory.getLogger(OracleEmbeddingStore.class);
     private static final Integer DEFAULT_DIMENSIONS = -1;
@@ -56,6 +62,20 @@ public class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
     private final OracleJSONPathFilterMapper filterMapper = new OracleJSONPathFilterMapper();
     private final OracleDataAdapter dataAdapter = new OracleDataAdapter();
 
+    /**
+     *
+     * @param dataSource Oracle Database JDBC DataSource.
+     * @param table Vector table name.
+     * @param dimension Embedding dimension.
+     * @param accuracy Search accuracy. Not used unless specified.
+     * @param batchSize Batch size to use when adding bulk records. Defaults to 50, Oracle suggests a batch size of 50-100.
+     * @param distanceType Distance type to use for similarity search. Defaults to COSINE.
+     * @param indexType Index type, currently supports IVF. Defaults to IVF.
+     * @param useIndex Whether to create an index on the table. Defaults to false.
+     * @param createTable Whether a table will be created on embedding store creation. Defaults to true.
+     * @param dropTableFirst Whether the table will be dropped on embedding store creation. Defaults to false.
+     * @param normalizeVectors Whether vectors are normalized. Defaults to false.
+     */
     @Builder
     public OracleEmbeddingStore(DataSource dataSource,
                                 String table,
@@ -358,6 +378,13 @@ public class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
                 .collect(Collectors.toList());
     }
 
+    /**
+     * Creates the vector store table and index if specified.
+     * @param dropTableFirst Whether to drop the table before creation.
+     * @param createTable Whether to create the table.
+     * @param useIndex Whether to create an index on the table.
+     * @param dimension The dimension of the vector store embeddings.
+     */
     protected void initTable(Boolean dropTableFirst, Boolean createTable, Boolean useIndex, Integer dimension) {
         String query = "init";
         try (Connection connection = dataSource.getConnection(); Statement stmt = connection.createStatement()) {
@@ -407,9 +434,12 @@ public class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
         return accuracy.equals(DEFAULT_ACCURACY) ? 95 : accuracy;
     }
 
+    /**
+     * Specifies the distance type used for search.
+     */
     public enum DistanceType {
         /**
-         * Default metric. It calculates the cosine distane between two vectors.
+         * Default metric. It calculates the cosine distance between two vectors.
          */
         COSINE,
 
@@ -442,6 +472,9 @@ public class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
         MANHATTAN
     }
 
+    /**
+     * Specifies the index type used on the embedding index.
+     */
     public enum IndexType {
 
         /**
@@ -450,11 +483,8 @@ public class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
         NONE,
 
         /**
-         * </p>
          * The default type of index created for an In-Memory Neighbor Graph vector index
-         * is Hierarchical Navigable Small World (HNSW).
-         * </p>
-         *
+         * is Hierarchical Navigable Small World (HNSW)
          * <p>
          * With Navigable Small World (NSW), the idea is to build a proximity graph where
          * each vector in the graph connects to several others based on three
@@ -466,7 +496,6 @@ public class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
          * <li>Within the maximum number of connections (NEIGHBORS) permitted per
          * vector</li>
          * </ul>
-         * </p>
          *
          * @see <a href=
          * "https://docs.oracle.com/en/database/oracle/oracle-database/23/vecse/understand-hierarchical-navigable-small-world-indexes.html">Oracle
@@ -475,13 +504,11 @@ public class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
         HNSW,
 
         /**
-         * <p>
          * The default type of index created for a Neighbor Partition vector index is
          * Inverted File Flat (IVF) vector index. The IVF index is a technique designed to
          * enhance search efficiency by narrowing the search area through the use of
          * neighbor partitions or clusters.
-         * </p>
-         *
+         * <p>
          * * @see <a href=
          * "https://docs.oracle.com/en/database/oracle/oracle-database/23/vecse/understand-inverted-file-flat-vector-indexes.html">Oracle
          * Database documentation</a>

@@ -15,6 +15,9 @@ import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.model.output.Response;
 import lombok.experimental.SuperBuilder;
 
+/**
+ * OCI GenAI implementation of Langchain4j EmbeddingModel
+ */
 @SuperBuilder
 public class OCIEmbeddingModel extends OCIClientProvider implements EmbeddingModel {
     /**
@@ -35,6 +38,12 @@ public class OCIEmbeddingModel extends OCIClientProvider implements EmbeddingMod
      */
     private EmbedTextDetails.Truncate truncate;
 
+    /**
+     * Embeds the text content of a list of TextSegments.
+     *
+     * @param textSegments the text segments to embed.
+     * @return the embeddings.
+     */
     @Override
     public Response<List<Embedding>> embedAll(List<TextSegment> textSegments) {
         List<Embedding> embeddings = new ArrayList<>();

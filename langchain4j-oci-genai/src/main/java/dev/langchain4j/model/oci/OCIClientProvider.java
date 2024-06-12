@@ -22,6 +22,10 @@ import lombok.NoArgsConstructor;
 import lombok.experimental.SuperBuilder;
 
 
+/**
+ * Client Builder for OCI authentication.
+ * Supports file, simple, instance principal, and workload identity authentication.
+ */
 @SuperBuilder
 @NoArgsConstructor
 @AllArgsConstructor

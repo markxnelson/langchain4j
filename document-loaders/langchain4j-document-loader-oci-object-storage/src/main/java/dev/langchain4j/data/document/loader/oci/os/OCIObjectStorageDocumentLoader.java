@@ -18,6 +18,11 @@ import dev.langchain4j.data.document.source.oci.os.OCIObjectStorageSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * OCI Object Storage Document Loader.
+ * Supports loading documents from OCI Object Storage buckets, either by prefix or bucket-wide.
+ * Objects may be loaded as a synchronous document list, or as a document stream.
+ */
 public class OCIObjectStorageDocumentLoader {
     private static final Logger log = LoggerFactory.getLogger(OCIObjectStorageDocumentLoader.class);
     private static final Integer DEFAULT_LIMIT = -1;

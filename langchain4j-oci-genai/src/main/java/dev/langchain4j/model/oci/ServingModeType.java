@@ -2,6 +2,9 @@ package dev.langchain4j.model.oci;
 
 import lombok.Getter;
 
+/**
+ * Serving Mode for OCI GenAI clusters.
+ */
 @Getter
 public enum ServingModeType {
 

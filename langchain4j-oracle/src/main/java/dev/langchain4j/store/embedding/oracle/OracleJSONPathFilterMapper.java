@@ -17,11 +17,21 @@ import dev.langchain4j.store.embedding.filter.logical.Not;
 import dev.langchain4j.store.embedding.filter.logical.Or;
 
 public class OracleJSONPathFilterMapper {
+    /**
+     * Generates a where clause using a JSON path expression generated from a Filter.
+     * @param filter Filter to map to JSON path expression.
+     * @return Where clause with appended JSON path expression.
+     */
     public String whereClause(Filter filter) {
         final String jsonExistsClause = "where json_exists(metadata, '$?(%s)')";
         return String.format(jsonExistsClause, map(filter));
     }
 
+    /**
+     * Maps a Filter to a JSON path expression
+     * @param filter Filter to map.
+     * @return JSON path expression String.
+     */
     private String map(Filter filter) {
         if (filter instanceof IsEqualTo) {
             IsEqualTo eq = (IsEqualTo) filter;
