@@ -35,49 +35,13 @@ The following examples demonstrate common ways to instantiate the OCI Embedding 
 #### Config File Authentication
 
 ```java
+String configFile = Paths.get(System.getProperty("user.home"), ".oci", "config").toString();
+String profile = "DEFAULT";
+BasicAuthenticationDetailsProvider authenticationDetailsProvider = new ConfigFileAuthenticationDetailsProvider(configFile, profile);
 EmbeddingModel embeddingModel = OCIEmbeddingModel.builder()
     .model(System.getenv("OCI_EMBEDDING_MODEL"))
     .compartmentId(System.getenv("OCI_COMPARTMENT_ID"))
-    .authenticationType(AuthenticationType.FILE) // Defaults to AuthenticationType.FILE
-    .configFile("/path/to/oci/config/file") // Defaults to <user home directory>/.oci/config
-    .profile("MY_OCI_PROFILE") // Defaults to "DEFAULT"
-    .build();
-```
-
-#### Simple (user-based) Authentication
-
-```java
-EmbeddingModel embeddingModel = OCIEmbeddingModel.builder()
-    .model(System.getenv("OCI_EMBEDDING_MODEL"))
-    .compartmentId(System.getenv("OCI_COMPARTMENT_ID"))
-    .authenticationType(AuthenticationType.SIMPLE)
-    .fingerprint(System.getenv("OCI_FINGERPRINT"))
-    .userId(System.getenv("OCI_USER_ID"))
-    .tenantId(System.getenv("OCI_TENANT_ID"))
-    .privateKey(System.getenv("OCI_PRIVATE_KEY"))
-    .passPhrase(System.getenv("OCI_PRIVATE_KEY_PASSPHRASE")) // Include if private key is password protected.
-    .region("my-region-code") // Defaults to "us-chicago-1".
-    .build();
-```
-
-#### Instance Principal Authentication
-
-```java
-EmbeddingModel embeddingModel = OCIEmbeddingModel.builder()
-    .model(System.getenv("OCI_EMBEDDING_MODEL"))
-    .compartmentId(System.getenv("OCI_COMPARTMENT_ID"))
-    .authenticationType(AuthenticationType.INSTANCE_PRINCIPAL)
-    .build();
-```
-
-#### Workload Identity Authentication
-
-```java
-EmbeddingModel embeddingModel = OCIEmbeddingModel.builder()
-    .model(System.getenv("OCI_EMBEDDING_MODEL"))
-    .compartmentId(System.getenv("OCI_COMPARTMENT_ID"))
-    .authenticationType(AuthenticationType.WORKLOAD_IDENTITY)
-    .region("my-region-code") // Defaults to "us-chicago-1".
+    .authenticationDetailsProvider(authenticationDetailsProvider)
     .build();
 ```
 
@@ -90,6 +54,7 @@ EmbeddingModel embeddingModel = OCIEmbeddingModel.builder()
     .model(System.getenv("OCI_EMBEDDING_MODEL"))
     .compartmentId(System.getenv("OCI_COMPARTMENT_ID"))
     .truncate(EmbedTextDetails.Truncate.End) // Defaults to None. Can be None, Start, or End.
+    .authenticationDetailsProvider(authenticationDetailsProvider)
     .build();
 ```
 
@@ -102,6 +67,7 @@ EmbeddingModel embeddingModel = OCIEmbeddingModel.builder()
     .model(System.getenv("OCI_DEDICATED_AI_CLUSTER_ENDPOINT"))
     .compartmentId(System.getenv("OCI_COMPARTMENT_ID"))
     .servingModeType(ServingModeType.DEDICATED) // Defaults to ON_DEMAND serving mode.
+    .authenticationDetailsProvider(authenticationDetailsProvider)
     .build();
 ```
 
@@ -123,9 +89,14 @@ import dev.langchain4j.store.embedding.inmemory.InMemoryEmbeddingStore;
 
 public class HelloWorld {
     public static void main(String[] args) {
+        String configFile = Paths.get(System.getProperty("user.home"), ".oci", "config").toString();
+        String profile = "DEFAULT";
+        BasicAuthenticationDetailsProvider authenticationDetailsProvider = new ConfigFileAuthenticationDetailsProvider(configFile, profile);
         EmbeddingModel embeddingModel = OCIEmbeddingModel.builder()
                 .model(System.getenv("OCI_EMBEDDING_MODEL"))
-                .compartmentId(System.getenv("OCI_COMPARTMENT_ID"));
+                .compartmentId(System.getenv("OCI_COMPARTMENT_ID"))
+                .authenticationDetailsProvider(authenticationDetailsProvider)
+                .build();
 
         // For simplicity, this example uses an in-memory store, but you can choose any external compatible store for production environments.
         EmbeddingStore<TextSegment> embeddingStore = new InMemoryEmbeddingStore<>();
