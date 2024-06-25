@@ -38,17 +38,8 @@
 
         <dependency>
             <groupId>com.oracle.oci.sdk</groupId>
-            <artifactId>oci-java-sdk-identity</artifactId>
-        </dependency>
-
-        <dependency>
-            <groupId>com.oracle.oci.sdk</groupId>
-            <artifactId>oci-java-sdk-addons-oke-workload-identity</artifactId>
-        </dependency>
-
-        <dependency>
-            <groupId>com.oracle.oci.sdk</groupId>
             <artifactId>oci-java-sdk-common-httpclient-jersey3</artifactId>
+            <optional>true</optional>
         </dependency>
 
         <dependency>
